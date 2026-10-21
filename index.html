@@ -730,15 +730,16 @@ td.bp-crm .lnk{margin-left:5px;font-size:.68rem}
 html[data-crm-off] .bp-crm-col{display:none !important}
 /* 계약번호 여러 개 입력(10-21) — 첫 칸 옆 「+」, 아래 「계약번호 2~5」 칸 · 「−」 */
 .cno-row{display:flex;gap:6px;align-items:center}
-.cno-row input{flex:1 1 auto;min-width:0}
+.cno-row input,.cno-extra .r input{flex:1 1 0 !important;width:auto !important;min-width:0}
 .cno-btn{width:30px;height:30px;border:1px solid #0f6cbd;background:#fff;color:#0f6cbd;border-radius:4px;font-size:1rem;font-weight:700;line-height:1;cursor:pointer;flex:0 0 auto;padding:0}
 .cno-btn:hover{background:#eef5fc}.cno-btn:disabled{opacity:.4;cursor:default;background:#fff}
 .cno-btn.del{border-color:#c8c6c4;color:#605e5c}.cno-btn.del:hover{background:#f3f2f1}
-.cno-extra{display:none;flex-direction:column;gap:6px;margin:-4px 0 8px}
-.cno-extra .r{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.cno-extra .r label{font-size:.72rem;color:#605e5c;width:72px;flex:0 0 auto;font-weight:600}
-.cno-extra .r input{width:220px;max-width:100%;font-family:inherit}
-.cno-extra .r .msg,.cno-row .msg{font-size:.7rem;color:#a4262c}
+.cno-extra{display:none;flex-direction:column;gap:6px;margin-top:6px}
+.cno-extra .r{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.cno-extra .r input{flex:1 1 0;min-width:0;font-family:inherit}
+.cno-row .msg,.cno-extra .r .msg{flex:0 0 100%;font-size:.68rem;color:#a4262c;line-height:1.3}
+.cno-row .msg:empty,.cno-extra .r .msg:empty{display:none}
+.cno-row{flex-wrap:wrap}
 .cno-extra .r input.bad,#bp-f-bizno.bad{border-color:#a4262c !important}
 /* UAT — 결재 쓰기 단추 잠금(실제 차단은 fetch 가드). BP Master 단추는 UAT 사본에 쓰므로 잠그지 않는다. 운영에는 data-uat-ro 가 없어 영향 없음 */
 [data-uat-ro] button[onclick^="submitForm"], [data-uat-ro] #appr-ok, [data-uat-ro] .btn-approve, [data-uat-ro] .btn-reject, [data-uat-ro] button[onclick*="withdrawRequest"],
@@ -1507,12 +1508,11 @@ window.apsYear = (function () {
               <div class="fld"><label>한글이름</label><input type="text" id="bp-f-nameko" maxlength="100"></div>
             </div>
             <div class="g4b">
-              <div class="fld"><label>사업자등록번호 / 계약번호</label><div class="cno-row"><input type="text" id="bp-f-bizno" maxlength="40" oninput="crmIfBizInput(this)" onblur="crmIfBizBlur(this)"><button type="button" class="cno-btn bp-crm-col" id="bp-cno-add" onclick="crmIfCnoAdd()" title="계약번호 추가(최대 5개)" style="display:none">+</button></div><span class="msg" id="bp-cno-msg0"></span></div>
+              <div class="fld"><label>사업자등록번호 / 계약번호</label><div class="cno-row"><input type="text" id="bp-f-bizno" maxlength="40" oninput="crmIfBizInput(this)" onblur="crmIfBizBlur(this)"><button type="button" class="cno-btn bp-crm-col" id="bp-cno-add" onclick="crmIfCnoAdd()" title="계약번호 추가(최대 5개)" style="display:none">+</button><span class="msg" id="bp-cno-msg0"></span></div><div class="cno-extra" id="bp-cno-extra"></div></div>
               <div class="fld"><label>Bank</label><input type="text" id="bp-f-bank" maxlength="60"></div>
               <div class="fld"><label>Account no.</label><input type="text" id="bp-f-acct" maxlength="40"></div>
               <div class="fld"><label>상태</label><select id="bp-f-inactive"><option value="No">활성</option><option value="Yes">비활성</option></select></div>
             </div>
-            <div class="cno-extra" id="bp-cno-extra"></div>   <!-- 계약번호 2~5 칸(10-21) — 첫 칸이 M 으로 시작할 때 「+」 로 추가 -->
             <div class="crm-note bp-crm-col" id="bp-crm-note"></div>   <!-- CRM 연동 안내(10-21) — 계약번호 칸 아래 한 줄 · 입력값에 따라 강조 -->
             <div class="bp-hist" id="bp-form-hist" style="display:none"></div>
             <div class="bp-form-ft"><span class="ft-note" id="bp-form-note">SAP Be1 에서 만든 코드를 그대로 적습니다. 「등록」을 누르면 Excel 새 행에 바로 기록됩니다.</span>
@@ -4183,10 +4183,10 @@ function crmIfCnoRender() {
 function crmIfCnoAdd() {
   const extra = document.getElementById('bp-cno-extra'); if (!extra || extra.querySelectorAll('.r').length + 1 >= CRMIF_MAX) return;
   const r = document.createElement('div'); r.className = 'r';
-  r.innerHTML = '<label>계약번호 ' + (extra.querySelectorAll('.r').length + 2) + '</label><input type="text" maxlength="12" placeholder="M26101040" oninput="crmIfBizInput(this)" onblur="crmIfBizBlur(this)"><button type="button" class="cno-btn del" onclick="crmIfCnoDel(this)" title="이 계약번호 삭제">−</button><span class="msg"></span>';
+  r.innerHTML = '<input type="text" maxlength="12" placeholder="계약번호 ' + (extra.querySelectorAll('.r').length + 2) + '" title="계약번호 ' + (extra.querySelectorAll('.r').length + 2) + '" oninput="crmIfBizInput(this)" onblur="crmIfBizBlur(this)"><button type="button" class="cno-btn del" onclick="crmIfCnoDel(this)" title="이 계약번호 삭제">−</button><span class="msg"></span>';
   extra.appendChild(r); crmIfCnoRender(); r.querySelector('input').focus();
 }
-function crmIfCnoDel(btn) { const r = btn.closest('.r'); if (r) r.remove(); [...document.querySelectorAll('#bp-cno-extra .r label')].forEach((l, i) => l.textContent = '계약번호 ' + (i + 2)); crmIfCnoRender(); }
+function crmIfCnoDel(btn) { const r = btn.closest('.r'); if (r) r.remove(); [...document.querySelectorAll('#bp-cno-extra .r input')].forEach((l, i) => { l.placeholder = '계약번호 ' + (i + 2); l.title = l.placeholder; }); crmIfCnoRender(); }
 function crmIfBizInput(inp) { if (inp.id !== 'bp-f-bizno' || /^m/i.test(inp.value)) { const c = inp.selectionStart; inp.value = inp.value.toUpperCase(); try { inp.setSelectionRange(c, c); } catch (e) {} } crmIfCnoRender(); }
 function crmIfBizBlur(inp) {
   if (inp.id === 'bp-f-bizno' && !/^M/i.test((inp.value || '').trim())) { crmIfCnoRender(); return; }
