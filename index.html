@@ -3785,10 +3785,12 @@ async function bpBulkAdd() {
    · 규격 · 규칙: BP-Master_CRM_인터페이스_정의서.xlsx v1.0 (파일 1:1 응답 · 상대 폴더는 읽기만 · 자기 폴더에만 쓰기)
    · Go-live(설정 키 ACC-OTHERS_CRM_IF = Y) 이후 저장 건만 — 이전 데이터 일괄 이관 없음(이전 건은 수정 저장될 때 UPDATE)
    · 보내는 값은 이름 · 유형 · 계약번호 · 상태뿐 — 계좌 · 사업자번호 · 메일은 보내지 않는다
-   · UAT(IS_UAT)는 같은 폴더 · 같은 파일 규칙에 test: true 로 보낸다(CRM 은 반영 없이 응답만). 상태 파일은 UAT 전용 이름. */
+   · UAT(IS_UAT)는 Outbound_…/UAT/YYYYMMDD · Inbound_…/UAT/YYYYMMDD 에 따로 쌓고 test: true 로 보낸다(CRM 은 반영 없이 응답만). 상태 파일은 UAT 전용 이름.
+   · 보존: 인터페이스 파일은 지우지 않는다(영구 보관 · 10-21 결정). keepDays 는 읽은 응답 목록 · 상태 재구성 범위에만 쓴다. */
 const CRMIF = {
   sitePath: 'startruckkorea.sharepoint.com:/sites/STK-Autofocus',   // Graph 사이트 경로(호스트명:/사이트 상대 경로)
-  root: 'Autofocus-CRM_BP-Master_Interface', out: 'Outbound_BP-Master_to_CRM', inb: 'Inbound_CRM_to_BP-Master',
+  root: 'Autofocus-CRM_BP-Master_Interface',
+  out: 'Outbound_BP-Master_to_CRM' + (_isUat() ? '/UAT' : ''), inb: 'Inbound_CRM_to_BP-Master' + (_isUat() ? '/UAT' : ''),   // UAT 는 각 폴더 아래 UAT/ 에 따로 쌓는다(10-21)
   pattern: /^M\d{8}$/, dummyDefault: ['M12345678'], chunk: 200, delayMin: 60, lookbackDays: 14, keepDays: 90, pollMs: 5 * 60 * 1000,
 };
 function _isUat() { return typeof IS_UAT !== 'undefined' && !!IS_UAT; }
