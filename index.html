@@ -728,7 +728,8 @@ td.bp-crm .lnk{margin-left:5px;font-size:.68rem}
 .bp-crm-bar .n.wait{background:#f3f2f1;color:#605e5c}.bp-crm-bar .n.late{background:#fff4e5;color:#b35b00}.bp-crm-bar .n.fail{background:#fde7e9;color:#a4262c}.bp-crm-bar .n.ok{background:#e6f4ea;color:#107c10}
 .bp-crm-bar .sub{color:#8a8886;font-size:.7rem}
 html[data-crm-off] .bp-crm-col{display:none !important}
-/* 계약번호 여러 개 입력(10-21) — 첫 칸 옆 「+」, 아래 「계약번호 2~5」 칸 · 「−」 */
+/* 계약번호 여러 개 입력(10-21 · 10-26 최대 20개) — 첫 칸 옆 「+」, 아래 「계약번호 2~20」 칸 · 「−」 */
+.cno-cnt{font-size:.68rem;color:#8a8886;margin-top:2px}.cno-cnt b{color:#0f6cbd;font-weight:600}
 .cno-row{display:flex;gap:6px;align-items:center}
 .cno-row input,.cno-extra .r input{flex:1 1 0 !important;width:auto !important;min-width:0}
 .cno-btn{width:30px;height:30px;border:1px solid #0f6cbd;background:#fff;color:#0f6cbd;border-radius:4px;font-size:1rem;font-weight:700;line-height:1;cursor:pointer;flex:0 0 auto;padding:0}
@@ -1508,7 +1509,7 @@ window.apsYear = (function () {
               <div class="fld"><label>한글이름</label><input type="text" id="bp-f-nameko" maxlength="100"></div>
             </div>
             <div class="g4b">
-              <div class="fld"><label>사업자등록번호 / 계약번호</label><div class="cno-row"><input type="text" id="bp-f-bizno" maxlength="40" oninput="crmIfBizInput(this)" onblur="crmIfBizBlur(this)"><button type="button" class="cno-btn bp-crm-col" id="bp-cno-add" onclick="crmIfCnoAdd()" title="계약번호 추가(최대 5개)" style="display:none">+</button><span class="msg" id="bp-cno-msg0"></span></div><div class="cno-extra" id="bp-cno-extra"></div></div>
+              <div class="fld"><label>사업자등록번호 / 계약번호</label><div class="cno-row"><input type="text" id="bp-f-bizno" maxlength="240" oninput="crmIfBizInput(this)" onblur="crmIfBizBlur(this)"><button type="button" class="cno-btn bp-crm-col" id="bp-cno-add" onclick="crmIfCnoAdd()" title="계약번호 추가(최대 20개)" style="display:none">+</button><span class="msg" id="bp-cno-msg0"></span></div><div class="cno-extra" id="bp-cno-extra"></div><div class="cno-cnt" id="bp-cno-cnt" style="display:none"></div></div>
               <div class="fld"><label>Bank</label><input type="text" id="bp-f-bank" maxlength="60"></div>
               <div class="fld"><label>Account no.</label><input type="text" id="bp-f-acct" maxlength="40"></div>
               <div class="fld"><label>상태</label><select id="bp-f-inactive"><option value="No">활성</option><option value="Yes">비활성</option></select></div>
@@ -3166,7 +3167,7 @@ function bpValidate(rec, isNew) {
 }
 async function bpSave() {
   const rec = bpFormVals(); const isNew = _bp.editRow == null;
-  const miss = bpValidate(rec, isNew).concat(crmIfValidate(rec));   // 계약번호 형식 · 중복 · 최대 5(10-21)
+  const miss = bpValidate(rec, isNew).concat(crmIfValidate(rec));   // 계약번호 형식 · 중복 · 최대 20(10-21 · 10-26)
   if (miss.length) { alert('다음 항목을 확인해 주세요.\n\n· ' + miss.join('\n· ')); return; }
   const btn = document.getElementById('bp-save-btn'); btn.disabled = true;
   bpFlushPasteLog();
@@ -3743,7 +3744,7 @@ function bpParsePaste() {
   const wrap = document.getElementById('bp-prev-wrap');
   if (!recs.length) { wrap.style.display = 'none'; _bp.bulk = []; clearTimeout(_bpPasteTimer); _bpPastePending = null; return; }
   if (recs.length === 1) { wrap.style.display = 'none'; _bp.bulk = []; bpResetForm(); bpFillForm(recs[0]); bpLogPasteLater(txt, recs, null); return; }
-  _bp.bulk = recs.map(r => { const miss = bpValidate(r, true); const dup = miss.find(m => m.startsWith('이미 있는')); return { ...r, miss, dup: !!dup }; });
+  _bp.bulk = recs.map(r => { const miss = bpValidate(r, true); if (/^M/i.test(String(r.bizNo || '')) && String(r.bizNo).split(';').filter(Boolean).length > CRMIF_MAX) miss.push('계약번호는 최대 ' + CRMIF_MAX + '개까지'); const dup = miss.find(m => m.startsWith('이미 있는')); return { ...r, miss, dup: !!dup }; });
   // 붙여넣은 목록 안의 중복 코드도 표시
   const seen = {}; _bp.bulk.forEach(r => { if (seen[r.code]) { r.miss.push('붙여넣은 목록 안에서 중복'); r.dup = true; } seen[r.code] = true; });
   document.getElementById('bp-prev-body').innerHTML = _bp.bulk.map((r, i) => '<tr class="' + (r.dup ? 'dup' : (r.miss.length ? 'bad' : '')) + '"><td>' + (i + 1) + '</td><td class="bp-code">' + esc(r.code) + '</td><td>' + esc(r.type || '?') + '</td><td>' + esc(r.name) + '</td><td>' + esc(r.nameKo) + '</td><td>' + esc(r.bizNo) + '</td><td>' + esc(r.bank) + '</td><td>' + esc(r.acct) + '</td><td>' + (r.inactive ? '비활성' : '활성') + '</td><td>' + (r.miss.length ? esc(r.miss.join(' · ')) : '✓') + '</td></tr>').join('');
@@ -4153,8 +4154,9 @@ function crmIfExport() {
   XLSX.writeFile(wb, 'BP-Master_CRM연동현황_' + d.getUTCFullYear() + p(d.getUTCMonth() + 1) + p(d.getUTCDate()) + '_' + p(d.getUTCHours()) + p(d.getUTCMinutes()) + '.xlsx', { compression: true });
   bpLogAdmin('CRM 현황 내보내기', { count: rows.length - 1 });
 }
-/* ── 계약번호 여러 개 입력(10-21) — 첫 칸(bp-f-bizno)이 M 으로 시작하면 「+」 로 최대 CRMIF_MAX 개. 저장값은 세미콜론 연결 ── */
-const CRMIF_MAX = 5;
+/* ── 계약번호 여러 개 입력(10-21) — 첫 칸(bp-f-bizno)이 M 으로 시작하면 「+」 로 최대 CRMIF_MAX 개. 저장값은 세미콜론 연결 ──
+   10-26: 최대 5 → 20. 20개 × 9자 + 구분자 19 = 199자 — BP 마스터 Excel E열(셀 최대 32,767자) · 상태 파일 · CRM 요청 JSON(contractNos 배열) 모두 길이 제한 없음 */
+const CRMIF_MAX = 20;
 function crmIfIsContractMode() { const el = document.getElementById('bp-f-bizno'); return !!el && /^M/i.test((el.value || '').trim()); }
 function crmIfCnoInputs() { const p = document.getElementById('bp-f-bizno'); return p ? [p].concat([...document.querySelectorAll('#bp-cno-extra input')]) : []; }
 function crmIfCnoVals() { return crmIfCnoInputs().map(i => (i.value || '').trim().toUpperCase().replace(/\s+/g, '')); }
@@ -4169,10 +4171,11 @@ function crmIfCnoRender() {
   const add = document.getElementById('bp-cno-add'), extra = document.getElementById('bp-cno-extra'); if (!add || !extra) return;
   const mode = crmIfOn() && crmIfIsContractMode();
   add.style.display = mode ? '' : 'none';
-  if (!mode) { extra.innerHTML = ''; extra.style.display = 'none'; const m0 = document.getElementById('bp-cno-msg0'); if (m0) m0.textContent = ''; document.getElementById('bp-f-bizno').classList.remove('bad'); crmIfNoteUpdate(); return; }
+  if (!mode) { extra.innerHTML = ''; extra.style.display = 'none'; const c0 = document.getElementById('bp-cno-cnt'); if (c0) c0.style.display = 'none'; const m0 = document.getElementById('bp-cno-msg0'); if (m0) m0.textContent = ''; document.getElementById('bp-f-bizno').classList.remove('bad'); crmIfNoteUpdate(); return; }
   const rows = extra.querySelectorAll('.r');
   add.disabled = rows.length + 1 >= CRMIF_MAX; add.title = add.disabled ? '최대 ' + CRMIF_MAX + '개' : '계약번호 추가(최대 ' + CRMIF_MAX + '개)';
   extra.style.display = rows.length ? 'flex' : 'none';
+  const cnt = document.getElementById('bp-cno-cnt'); if (cnt) { cnt.style.display = rows.length ? '' : 'none'; cnt.innerHTML = '계약번호 <b>' + (rows.length + 1) + '</b> / ' + CRMIF_MAX; }
   const vals = crmIfCnoVals(), seen = {}, dm = crmIfDummy();
   crmIfCnoInputs().forEach((inp, i) => {
     const v = vals[i]; let msg = '', bad = false;
