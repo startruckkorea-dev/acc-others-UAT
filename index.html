@@ -3840,8 +3840,18 @@ function crmIfContracts(raw) {
 }
 function crmIfIso(d) { const x = d || kstNow(), p = n => String(n).padStart(2, '0'); return x.getUTCFullYear() + '-' + p(x.getUTCMonth() + 1) + '-' + p(x.getUTCDate()) + 'T' + p(x.getUTCHours()) + ':' + p(x.getUTCMinutes()) + ':' + p(x.getUTCSeconds()) + '+09:00'; }
 function crmIfFileId(d) { const x = d || kstNow(), p = n => String(n).padStart(2, '0'); return '' + x.getUTCFullYear() + p(x.getUTCMonth() + 1) + p(x.getUTCDate()) + p(x.getUTCHours()) + p(x.getUTCMinutes()) + p(x.getUTCSeconds()); }
+function crmIfYmdDash(d) { const p = n => String(n).padStart(2, '0'); return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()); }   // kstNow() 처럼 KST 로 옮긴 Date 를 받는다
 function crmIfYmd(d) { const p = n => String(n).padStart(2, '0'); return '' + d.getUTCFullYear() + p(d.getUTCMonth() + 1) + p(d.getUTCDate()); }
-function crmIfShort(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(iso || '')); return m ? m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] : ''; }
+/* 시각 규칙(10-26 점검) — 파일 · 상태 · 화면에 쓰는 시각은 모두 KST ISO(+09:00). 날짜 폴더(YYYYMMDD) · fileId 도 KST.
+   비교 · 정렬은 문자열이 아니라 절대 시각(ms)으로 한다 — CRM 이 Z(UTC) 나 다른 오프셋으로 돌려줘도 같은 순간이면 같게 본다.
+   오프셋이 없는 시각은 KST 로 본다(규격상 +09:00 필수 · 방어용). */
+function crmIfMs(iso) {
+  const s = String(iso || '').trim(); if (!s) return 0;
+  const t = Date.parse(/[zZ]|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + '+09:00');
+  return isNaN(t) ? 0 : t;
+}
+function crmIfKstIso(iso) { const t = crmIfMs(iso); return t ? crmIfIso(new Date(t + 9 * 3600000)) : null; }   // 어떤 오프셋이든 KST ISO 로
+function crmIfShort(iso) { const t = crmIfMs(iso); if (!t) return ''; const k = new Date(t + 9 * 3600000), p = n => String(n).padStart(2, '0'); return p(k.getUTCMonth() + 1) + '-' + p(k.getUTCDate()) + ' ' + p(k.getUTCHours()) + ':' + p(k.getUTCMinutes()); }
 
 /* ── STK-Autofocus 드라이브 · 폴더 · 파일 ── */
 let _crmIfDrive = null;
@@ -3862,44 +3872,89 @@ async function crmIfEnsureFolder(driveId, path) {   // 'Autofocus-…/Outbound�
   catch (e) { if (!/exist|conflict|409|nameAlreadyExists/i.test(e.message)) throw e; }
   _crmIfFolders.add(path);
 }
-async function crmIfExists(driveId, path) { try { await api('/drives/' + driveId + '/root:/' + path + '?$select=id'); return true; } catch (e) { return false; } }
-async function crmIfPutJson(driveId, path, obj, ifMatch) {
-  const t = await token();
-  const res = await fetch(GRAPH + '/drives/' + driveId + '/root:/' + path + ':/content', { method: 'PUT',
-    headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json', ...(ifMatch ? { 'If-Match': ifMatch } : {}) }, body: JSON.stringify(obj, null, 2) });
-  return res;
+async function crmIfFetch(url, mkInit) {   // 일시 오류(429 · 5xx · 네트워크)는 기다렸다 다시 — 토큰은 시도마다 새로 받는다
+  let last = null;
+  for (let i = 0; i < 3; i++) {
+    if (i) await new Promise(r => setTimeout(r, last && last.wait ? last.wait : 1500 * i));
+    try {
+      const res = await fetch(url, await mkInit());
+      if (res.status === 429 || res.status >= 500) { const ra = parseInt(res.headers.get('Retry-After') || '', 10); last = { res, wait: Math.min(10, ra > 0 ? ra : 2 * (i + 1)) * 1000 }; continue; }
+      return res;
+    } catch (e) { last = { err: e }; }
+  }
+  if (last && last.res) return last.res;
+  throw (last && last.err) || new Error('네트워크 오류');
 }
+/* opt.ifMatch — 그 버전일 때만 덮어쓰기(412) · opt.createOnly — 없을 때만 만들기(이미 있으면 409/412, 덮어쓰기 금지) */
+/* 메타 · 목록 읽기 — 404(없음)와 일시 오류를 구분한다. { status, json } */
+async function crmIfStat(driveId, path, suffix) {   // suffix 예: '?$select=id,eTag' · ':/children?$select=…'
+  let res; try { res = await crmIfFetch(GRAPH + '/drives/' + driveId + '/root:/' + path + (suffix || ''), async () => ({ headers: { Authorization: 'Bearer ' + (await token()) } })); }
+  catch (e) { return { status: 0, json: null }; }
+  if (!res.ok) return { status: res.status, json: null };
+  try { return { status: res.status, json: await res.json() }; } catch (e) { return { status: res.status, json: null }; }
+}
+async function crmIfList(driveId, folder) {   // 폴더 안 파일(다음 쪽까지) — { status, items }. 404 는 폴더 없음
+  const items = []; let url = GRAPH + '/drives/' + driveId + '/root:/' + folder + ':/children?$select=name,id,size,file,lastModifiedDateTime&$top=200';
+  for (let guard = 0; url && guard < 50; guard++) {
+    let res; try { res = await crmIfFetch(url, async () => ({ headers: { Authorization: 'Bearer ' + (await token()) } })); } catch (e) { return { status: 0, items: null }; }
+    if (!res.ok) return { status: res.status, items: null };
+    let j; try { j = await res.json(); } catch (e) { return { status: res.status, items: null }; }
+    items.push(...(j.value || [])); url = j['@odata.nextLink'] || '';
+  }
+  return { status: 200, items };
+}
+async function crmIfPutJson(driveId, path, obj, opt) {
+  opt = opt || {};
+  const url = GRAPH + '/drives/' + driveId + '/root:/' + path + ':/content' + (opt.createOnly ? '?@microsoft.graph.conflictBehavior=fail' : '');
+  return crmIfFetch(url, async () => ({ method: 'PUT', body: JSON.stringify(obj, null, 2),
+    headers: { Authorization: 'Bearer ' + (await token()), 'Content-Type': 'application/json', ...(opt.ifMatch ? { 'If-Match': opt.ifMatch } : {}), ...(opt.createOnly ? { 'If-None-Match': '*' } : {}) } }));
+}
+/* 읽기 — { status, json, parseError }. 일시 오류(네트워크 · 429 · 5xx)와 깨진 파일을 구분해, 일시 오류는 다음에 다시 읽는다 */
 async function crmIfGetJson(driveId, pathOrItem) {
-  const t = await token();
   const url = pathOrItem.startsWith('/items/') ? GRAPH + '/drives/' + driveId + pathOrItem + '/content' : GRAPH + '/drives/' + driveId + '/root:/' + pathOrItem + ':/content';
-  const res = await fetch(url, { headers: { Authorization: 'Bearer ' + t } });
-  if (!res.ok) return null;
-  try { return await res.json(); } catch (e) { return null; }
+  let res; try { res = await crmIfFetch(url, async () => ({ headers: { Authorization: 'Bearer ' + (await token()) } })); } catch (e) { return { status: 0, json: null }; }
+  if (!res.ok) return { status: res.status, json: null };
+  const txt = await res.text();
+  try { return { status: res.status, json: JSON.parse(txt.replace(/^\uFEFF/, '')) }; } catch (e) { return { status: res.status, json: null, parseError: true }; }
 }
 
 /* ── 상태 파일(STK-DB 문서 루트) — BP 코드별 최신 1건 + 읽은 응답 파일명. ETag 조건부 저장 ── */
 let _crmIfState = null, _crmIfStateTag = '';
 async function crmIfStateLoad(force) {
   const driveId = await getDocDriveId();
-  let meta = null; try { meta = await api('/drives/' + driveId + '/root:/' + CRMIF_STATE_FILE + '?$select=id,eTag'); } catch (e) { meta = null; }
-  if (!meta) { if (!_crmIfState) _crmIfState = {}; _crmIfStateTag = ''; return _crmIfState; }
+  const m = await crmIfStat(driveId, CRMIF_STATE_FILE, '?$select=id,eTag');
+  if (m.status === 404) { if (!_crmIfState || _crmIfStateTag) _crmIfState = {}; _crmIfStateTag = ''; return _crmIfState; }   // 아직 없음 — 첫 저장은 「없을 때만 만들기」
+  if (!m.json) throw new Error('CRM 상태 파일을 확인하지 못했습니다 (HTTP ' + m.status + ')');                     // 일시 오류를 「파일 없음」 으로 오해하지 않는다
+  const meta = m.json;
   if (!force && _crmIfState && meta.eTag && meta.eTag === _crmIfStateTag) return _crmIfState;
-  const j = await crmIfGetJson(driveId, CRMIF_STATE_FILE);
-  _crmIfState = (j && typeof j === 'object') ? j : {};
+  const g = await crmIfGetJson(driveId, CRMIF_STATE_FILE);
+  if (!g.json && !g.parseError) throw new Error('CRM 상태 파일을 읽지 못했습니다 (HTTP ' + g.status + ')');   // 일시 오류로 빈 상태를 덮어쓰지 않게
+  _crmIfState = (g.json && typeof g.json === 'object' && !Array.isArray(g.json)) ? g.json : {};
   _crmIfStateTag = meta.eTag || '';
   return _crmIfState;
 }
-async function crmIfStateSave(mutate) {   // mutate(state) 를 적용해 저장. 412(다른 창이 먼저 저장)면 다시 읽어 적용한 뒤 한 번 더
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const st = await crmIfStateLoad(attempt > 0);
-    mutate(st);
+/* 저장 — 낙관적 잠금(ETag). 다른 창 · 다른 관리자가 먼저 저장했으면(412/409) 최신본을 다시 읽어 같은 변경을 다시 적용한다.
+   mutate 는 「현재 상태에 무엇을 더한다」 로만 쓰고(덮어쓰기 금지), 다시 적용해도 결과가 같아야 한다.
+   요청 파일은 썼는데 상태 저장만 실패한 변경은 _crmIfStateQueue 에 남겨 두었다가 다음 저장(전송 · 반영 확인) 때 먼저 적용한다. */
+let _crmIfStateQueue = [];
+async function crmIfStateSave(mutate) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt) await new Promise(r => setTimeout(r, 250 + Math.random() * 600 * attempt));
+    let st;
+    try { st = await crmIfStateLoad(attempt > 0); } catch (e) { lastErr = e; _crmIfState = null; _crmIfStateTag = ''; continue; }
+    _crmIfStateQueue.forEach(f => f(st)); if (mutate) mutate(st);
     st._updatedAt = crmIfIso(); st._updatedBy = bpWho();
-    const res = await crmIfPutJson(await getDocDriveId(), CRMIF_STATE_FILE, st, _crmIfStateTag || null);
-    if (res.ok) { let j = null; try { j = await res.json(); } catch (e) {} if (j && j.eTag) _crmIfStateTag = j.eTag; return st; }
-    if (res.status !== 412) throw new Error('CRM 상태 파일 저장 실패 (HTTP ' + res.status + ')');
-    _crmIfState = null; _crmIfStateTag = '';
+    let res;
+    try { res = await crmIfPutJson(await getDocDriveId(), CRMIF_STATE_FILE, st, _crmIfStateTag ? { ifMatch: _crmIfStateTag } : { createOnly: true }); }
+    catch (e) { lastErr = e; _crmIfState = null; _crmIfStateTag = ''; continue; }
+    if (res.ok) { let j = null; try { j = await res.json(); } catch (e) {} _crmIfStateTag = (j && j.eTag) || ''; if (!_crmIfStateTag) _crmIfState = null; _crmIfStateQueue = []; return st; }
+    _crmIfState = null; _crmIfStateTag = '';   // 메모리 사본은 버리고 다음 시도에서 최신본을 읽는다
+    if (res.status === 412 || res.status === 409) { lastErr = new Error('CRM 상태 파일 저장이 겹쳤습니다 — 잠시 뒤 「CRM 상태 갱신」 을 눌러 주세요'); continue; }
+    lastErr = new Error('CRM 상태 파일 저장 실패 (HTTP ' + res.status + ')');
+    if (res.status !== 429 && res.status < 500) break;
   }
-  throw new Error('CRM 상태 파일 저장이 겹쳤습니다 — 잠시 뒤 「CRM 상태 갱신」 을 눌러 주세요');
+  throw lastErr || new Error('CRM 상태 파일 저장 실패');
 }
 function crmIfStateSet(st, code, patch) {
   const cur = st[code] || {};
@@ -3915,7 +3970,7 @@ function crmIfRollup(e) {
   const rs = keys.map(k => per[k].result);
   const expected = (e.contractNos || []).length || 1;
   if (rs.length < expected && rs.every(ok)) { e.result = 'PENDING'; return; }
-  const last = keys.map(k => per[k]).filter(p => p.appliedAt).sort((a, b) => String(b.appliedAt).localeCompare(String(a.appliedAt)))[0];
+  const last = keys.map(k => per[k]).filter(p => crmIfMs(p.appliedAt)).sort((a, b) => crmIfMs(b.appliedAt) - crmIfMs(a.appliedAt))[0];
   if (rs.every(ok)) { e.result = rs.includes('APPLIED') ? 'APPLIED' : 'ALREADY_SAME'; e.appliedAt = last ? last.appliedAt : null; e.crmContractor = keys.map(k => per[k].crmContractor).filter(Boolean).join(' · ') || null; e.message = keys.map(k => per[k].message).filter(Boolean).join(' / '); }
   else if (rs.some(ok)) { e.result = 'PARTIAL'; e.appliedAt = last ? last.appliedAt : null; e.message = keys.filter(k => !ok(per[k].result)).map(k => k + ': ' + per[k].result + (per[k].message ? ' — ' + per[k].message : '')).join(' / '); }
   else { e.result = rs.includes('ERROR') ? 'ERROR' : rs.includes('AMBIGUOUS') ? 'AMBIGUOUS' : rs.includes('NOT_FOUND') ? 'NOT_FOUND' : 'SKIPPED'; e.appliedAt = null; e.message = keys.map(k => per[k].message).filter(Boolean).join(' / '); }
@@ -3937,7 +3992,7 @@ async function crmIfSend(items, origin) {
   });
   if (!targets.length) return { sent: 0, failed: [], dummies };
   const chunks = []; for (let i = 0; i < targets.length; i += CRMIF.chunk) chunks.push(targets.slice(i, i + CRMIF.chunk));
-  const files = [], failed = [];
+  const files = [], failed = [], stateLag = [];
   for (const ch of chunks) {
     const now = kstNow(); let fileId = crmIfFileId(now); const date = fileId.slice(0, 8);
     const body = { schemaVersion: '1.0', direction: 'BPMASTER_TO_CRM', source: 'APS-BP-Master', target: 'Autofocus-CRM', fileId, createdAt: crmIfIso(now), createdBy: bpWho(), test: _isUat(), count: ch.length, records: [] };
@@ -3945,25 +4000,38 @@ async function crmIfSend(items, origin) {
       const d = await crmIfDrive();
       const folder = CRMIF.root + '/' + CRMIF.out + '/' + date;
       await crmIfEnsureFolder(d.driveId, folder);
-      let n = 1; while (await crmIfExists(d.driveId, folder + '/' + fileId + '.json')) { n++; fileId = crmIfFileId(now) + '_' + n; }   // 같은 초에 두 번 쓰면 _2, _3 (덮어쓰기 금지)
-      body.fileId = fileId;
-      body.records = ch.map(it => ({ recordId: it.x.code + '@' + fileId, event: it.event, bpCode: it.x.code, bpType: it.x.type, name1: it.x.name || '', nameKo: it.x.nameKo || '',
-        contractNos: it.nos, previousContractNos: it.prevNos || [], status: it.x.inactive ? 'INACTIVE' : 'ACTIVE', changedFields: it.changed || [], modifiedAt: body.createdAt, modifiedBy: body.createdBy }));
-      const res = await crmIfPutJson(d.driveId, folder + '/' + fileId + '.json', body);
-      if (!res.ok) throw new Error('요청 파일 쓰기 실패 (HTTP ' + res.status + ')');
+      // 같은 초 · 다른 관리자와 겹치면 서버가 409/412 로 거절한다(없을 때만 만들기) → _2, _3 … 으로 다시. 확인 후 쓰기(TOCTOU) 경쟁이 없다
+      const base = fileId; let res = null;
+      for (let n = 1; n <= 20; n++) {
+        fileId = n === 1 ? base : base + '_' + n; body.fileId = fileId;
+        body.records = ch.map(it => ({ recordId: it.x.code + '@' + fileId, event: it.event, bpCode: it.x.code, bpType: it.x.type, name1: it.x.name || '', nameKo: it.x.nameKo || '',
+          contractNos: it.nos, previousContractNos: it.prevNos || [], status: it.x.inactive ? 'INACTIVE' : 'ACTIVE', changedFields: it.changed || [], modifiedAt: body.createdAt, modifiedBy: body.createdBy }));
+        res = await crmIfPutJson(d.driveId, folder + '/' + fileId + '.json', body, { createOnly: true });
+        if (res.ok || (res.status !== 409 && res.status !== 412)) break;
+      }
+      if (!res || !res.ok) throw new Error('요청 파일 쓰기 실패 (HTTP ' + (res ? res.status : '-') + ')');
       const fname = date + '/' + fileId + '.json'; files.push(fname);
-      await crmIfStateSave(st => ch.forEach(it => crmIfStateSet(st, it.x.code, { contractNos: it.nos, event: it.event, uploadedAt: body.createdAt, outboundFile: fname, result: 'PENDING', appliedAt: null, inboundFile: null, crmContractor: null, message: '', perContract: {} })));
+      const apply = st => ch.forEach(it => { const cur = st[it.x.code]; if (cur && crmIfMs(cur.uploadedAt) > crmIfMs(body.createdAt)) return;   // 더 새 전송이 이미 있으면 덮지 않는다
+        crmIfStateSet(st, it.x.code, { contractNos: it.nos, event: it.event, uploadedAt: body.createdAt, outboundFile: fname, result: 'PENDING', appliedAt: null, inboundFile: null, crmContractor: null, message: '', perContract: {} }); });
+      try { await crmIfStateSave(apply); }
+      catch (se) {   // 파일은 이미 나갔다 — 실패로 세지 않고, 상태 변경은 대기열에 두었다가 다음 저장 때 반영(창을 닫으면 「상태 재구성」 으로 복구)
+        _crmIfStateQueue.push(apply); stateLag.push(...ch.map(it => it.x.code));
+        bpLogAdmin('CRM 상태 기록 지연', { file: fname, codes: ch.map(it => it.x.code).join(','), error: aoErr(se) });
+      }
       bpLogAdmin('CRM 전송', { file: fname, count: ch.length, codes: ch.map(it => it.x.code).join(','), events: ch.map(it => it.event).join(','), test: _isUat(), origin: origin || '' });
     } catch (e) {
       failed.push(...ch.map(it => it.x.code));
       console.warn('[CRM] 전송 실패:', e.message);
-      try { await crmIfStateSave(st => ch.forEach(it => crmIfStateSet(st, it.x.code, { contractNos: it.nos, event: it.event, uploadedAt: null, outboundFile: null, result: 'UPLOAD_FAILED', appliedAt: null, inboundFile: null, message: aoErr(e), perContract: {} }))); }
-      catch (e2) { console.warn('[CRM] 상태 기록 실패:', e2.message); }
+      const failAt = crmIfIso();
+      const applyFail = st => ch.forEach(it => { const cur = st[it.x.code]; if (cur && crmIfMs(cur.uploadedAt) > crmIfMs(failAt)) return;
+        crmIfStateSet(st, it.x.code, { contractNos: it.nos, event: it.event, uploadedAt: null, outboundFile: null, result: 'UPLOAD_FAILED', failedAt: failAt, appliedAt: null, inboundFile: null, message: aoErr(e), perContract: {} }); });
+      try { await crmIfStateSave(applyFail); }
+      catch (e2) { _crmIfStateQueue.push(applyFail); console.warn('[CRM] 상태 기록 실패:', e2.message); }
       bpLogAdmin('CRM 전송 실패', { count: ch.length, codes: ch.map(it => it.x.code).join(','), error: aoErr(e), origin: origin || '' });
     }
   }
   crmIfRenderSummary();
-  return { sent: targets.length - failed.length, failed, files, dummies };
+  return { sent: targets.length - failed.length, failed, files, dummies, stateLag };
 }
 /* 저장 뒤 한 줄 안내문 — showAlert 두 번째 줄에 붙인다 */
 function crmIfSendNote(r) {
@@ -3971,6 +4039,7 @@ function crmIfSendNote(r) {
   const parts = [];
   if (r.sent) parts.push('CRM 전송 ' + r.sent + '건' + (_isUat() ? '(시험 · test)' : '') + ' — 약 30분 이내 반영');
   if (r.failed && r.failed.length) parts.push('CRM 전송 실패 ' + r.failed.length + '건 — 목록에서 「재전송」');
+  if (r.stateLag && r.stateLag.length) parts.push('전송은 됐지만 상태 기록이 늦어지고 있음 ' + r.stateLag.length + '건 — 잠시 뒤 「↻ CRM 상태 갱신」');
   if (r.dummies && r.dummies.length) parts.push('임시 번호(' + crmIfDummy().join(', ') + ') ' + r.dummies.length + '건은 보내지 않음');
   return parts.length ? ' · ' + parts.join(' · ') : '';
 }
@@ -3999,51 +4068,72 @@ let _crmIfBusy = false, _crmIfLastRecon = 0, _crmIfTimer = null;
 async function crmIfReconcile(opt) {
   opt = opt || {};
   if (!crmIfOn() || _crmIfBusy || !isBpAdmin()) return null;
-  _crmIfBusy = true; let summary = { files: 0, updated: 0, failed: 0 };
+  _crmIfBusy = true; let summary = { files: 0, updated: 0, failed: 0, skipped: 0 };
   try {
     const st = await crmIfStateLoad(true);
-    const pending = Object.keys(st).filter(k => k.charAt(0) !== '_' && st[k] && st[k].result === 'PENDING' && st[k].uploadedAt);
-    if (!pending.length && !opt.manual) return summary;                       // 기다리는 건이 없으면 자동 갱신은 폴더를 읽지 않는다
-    const today = kstNow();
-    let from = new Date(today.getTime() - (opt.manual && !pending.length ? 3 : CRMIF.lookbackDays) * 86400000);
-    if (pending.length) { const minUp = pending.map(k => st[k].uploadedAt).sort()[0]; const d0 = new Date(minUp.slice(0, 10) + 'T00:00:00Z'); if (d0 > from) from = d0; }
-    const dates = []; for (let d = new Date(from.getTime()); crmIfYmd(d) <= crmIfYmd(today); d = new Date(d.getTime() + 86400000)) dates.push(crmIfYmd(d));
+    const pending = Object.keys(st).filter(k => k.charAt(0) !== '_' && st[k] && st[k].result === 'PENDING' && crmIfMs(st[k].uploadedAt));
+    if (!pending.length && !opt.manual && !_crmIfStateQueue.length) return summary;   // 기다리는 건이 없으면 자동 갱신은 폴더를 읽지 않는다
+    // 읽을 날짜 폴더(KST) — 가장 오래된 대기 건의 전송일 하루 전부터(응답 폴더를 UTC 날짜로 만드는 경우 · 자정 경계 대비) 오늘까지, 최대 lookbackDays
+    const nowK = kstNow(), DAY = 86400000;
+    let fromMs = nowK.getTime() - (opt.manual && !pending.length ? 3 : CRMIF.lookbackDays) * DAY;
+    if (pending.length) { const minUp = Math.min(...pending.map(k => crmIfMs(st[k].uploadedAt))); const d0 = Date.parse(crmIfYmdDash(new Date(minUp + 9 * 3600000)) + 'T00:00:00Z') - DAY; if (d0 > fromMs) fromMs = d0; }
+    if (opt.fromYmd) { const f = Date.parse(opt.fromYmd.slice(0, 4) + '-' + opt.fromYmd.slice(4, 6) + '-' + opt.fromYmd.slice(6, 8) + 'T00:00:00Z'); if (f < fromMs) fromMs = f; }
+    const dates = []; for (let t = fromMs; crmIfYmd(new Date(t)) <= crmIfYmd(nowK); t += DAY) dates.push(crmIfYmd(new Date(t)));
     const drv = await crmIfDrive();
     const processed = new Set(st._processedInbound || []);
-    const updates = [];
+    const updates = [], newlyProcessed = [];
+    const VALID = ['APPLIED', 'ALREADY_SAME', 'NOT_FOUND', 'AMBIGUOUS', 'SKIPPED', 'ERROR'];
     for (const date of dates) {
-      let ch = null;
-      try { ch = await apiAll('/drives/' + drv.driveId + '/root:/' + CRMIF.root + '/' + CRMIF.inb + '/' + date + ':/children?$select=name,id,size'); } catch (e) { continue; }   // 그 날짜 폴더가 없으면 건너뜀
-      for (const f of (ch.value || [])) {
-        if (!/\.json$/i.test(f.name)) continue;
+      const ls = await crmIfList(drv.driveId, CRMIF.root + '/' + CRMIF.inb + '/' + date);
+      if (ls.status === 404) continue;                                         // 그 날짜 폴더가 없음
+      if (!ls.items) { summary.skipped++; continue; }                          // 일시 오류 — 다음 확인 때 다시
+      for (const f of ls.items.slice().sort((x, y) => String(x.name).localeCompare(String(y.name)))) {   // 파일명(=생성 시각) 순으로
+        if (!f.file || !/\.json$/i.test(f.name)) continue;
         const key = date + '/' + f.name; if (processed.has(key)) continue;
-        const j = await crmIfGetJson(drv.driveId, '/items/' + f.id);
+        const g = await crmIfGetJson(drv.driveId, '/items/' + f.id);
+        if (!g.json && !g.parseError) { summary.skipped++; continue; }         // 일시 오류 — 처리 표시를 하지 않는다
+        const young = Date.now() - crmIfMs(f.lastModifiedDateTime) < 10 * 60000;
+        const j = g.json;
+        const okShape = j && typeof j === 'object' && Array.isArray(j.results) && (!j.direction || j.direction === 'CRM_TO_BPMASTER');
+        if (!okShape) { if (young) { summary.skipped++; continue; }              // 쓰는 중일 수 있다 — 10분 뒤에도 깨져 있으면 그때 「잘못된 파일」
+          updates.push({ bad: key }); newlyProcessed.push(key); summary.files++; continue; }
         summary.files++;
-        if (!j || !Array.isArray(j.results)) { updates.push({ bad: key }); processed.add(key); continue; }
         j.results.forEach(r => {
-          const at = String(r.recordId || '').indexOf('@'); if (at < 0) return;
-          const code = r.recordId.slice(0, at), fid = r.recordId.slice(at + 1);
-          const e = st[code]; if (!e || !e.outboundFile || !String(e.outboundFile).endsWith('/' + fid + '.json')) return;   // 이 환경 · 이 요청의 응답만(운영 ↔ UAT 는 recordId 가 다르다)
-          updates.push({ code, r, file: key });
+          if (!r || typeof r !== 'object') return;
+          const rid = String(r.recordId || ''), at = rid.lastIndexOf('@'); if (at < 1) return;
+          const code = rid.slice(0, at), fid = rid.slice(at + 1);
+          let result = String(r.result || '').trim().toUpperCase(), msg = String(r.message || '');
+          if (!VALID.includes(result)) { msg = '알 수 없는 결과 코드 「' + (r.result || '') + '」' + (msg ? ' — ' + msg : ''); result = 'ERROR'; }
+          updates.push({ code, fid, file: key, r: { contractNo: r.contractNo ? String(r.contractNo).trim().toUpperCase() : '-', result, message: msg.slice(0, 300),
+            appliedAt: crmIfKstIso(r.appliedAt), crmContractor: r.crmContractor ? String(r.crmContractor).slice(0, 100) : null,
+            previousSapCode: r.previousSapCode || null, crmContractId: r.crmContractId || null } });
         });
-        processed.add(key);
+        newlyProcessed.push(key);
       }
     }
-    const keepFrom = crmIfYmd(new Date(today.getTime() - CRMIF.keepDays * 86400000));
-    if (updates.length || summary.files) {
+    const keepFrom = crmIfYmd(new Date(nowK.getTime() - CRMIF.keepDays * DAY));
+    if (updates.length || newlyProcessed.length || _crmIfStateQueue.length) {
+      // 저장 시점의 최신 상태에 다시 적용 — 그사이 새 전송이 있었으면(요청 파일이 바뀜) 옛 응답은 버린다
       await crmIfStateSave(s => {
+        const done = new Set(s._processedInbound || []);
         updates.forEach(u => {
-          if (u.bad) { s._badInbound = (s._badInbound || []).concat([u.bad]).slice(-50); return; }
-          const e = s[u.code]; if (!e) return;
+          if (u.bad) { if (!done.has(u.bad)) s._badInbound = (s._badInbound || []).concat([u.bad]).slice(-50); return; }
+          const e = s[u.code]; if (!e || !e.outboundFile || !String(e.outboundFile).endsWith('/' + u.fid + '.json')) return;   // 이 환경 · 이 요청의 응답만
+          const cn = u.r.contractNo; const nos = e.contractNos || [];
+          if (cn !== '-' && nos.length && !nos.includes(cn)) return;           // 요청하지 않은 계약번호 결과는 무시
           e.perContract = e.perContract || {};
-          e.perContract[u.r.contractNo || '-'] = { result: String(u.r.result || 'ERROR'), appliedAt: u.r.appliedAt || null, message: String(u.r.message || '').slice(0, 300), crmContractor: u.r.crmContractor || null, previousSapCode: u.r.previousSapCode || null, crmContractId: u.r.crmContractId || null };
+          e.perContract[cn] = { result: u.r.result, appliedAt: u.r.appliedAt, message: u.r.message, crmContractor: u.r.crmContractor, previousSapCode: u.r.previousSapCode, crmContractId: u.r.crmContractId };
           e.inboundFile = u.file;
           crmIfRollup(e);
-          summary.updated++; if (!/^(APPLIED|ALREADY_SAME|PENDING)$/.test(e.result)) summary.failed++;
         });
-        s._processedInbound = [...processed].filter(k => k.slice(0, 8) >= keepFrom).sort();
+        newlyProcessed.forEach(k => done.add(k));                               // 다른 창이 처리한 목록과 합친다(덮어쓰기 금지)
+        s._processedInbound = [...done].filter(k => k.slice(0, 8) >= keepFrom).sort().slice(-5000);
       });
-      bpLogAdmin('CRM 반영 확인', { files: summary.files, updated: summary.updated, failed: summary.failed, bad: updates.filter(u => u.bad).map(u => u.bad), manual: !!opt.manual });
+      const st2 = _crmIfState || {};
+      const touched = [...new Set(updates.filter(u => !u.bad).map(u => u.code))];
+      summary.updated = touched.length;
+      summary.failed = touched.filter(c => st2[c] && !/^(APPLIED|ALREADY_SAME|PENDING)$/.test(st2[c].result)).length;
+      bpLogAdmin('CRM 반영 확인', { files: summary.files, updated: summary.updated, failed: summary.failed, skipped: summary.skipped, bad: updates.filter(u => u.bad).map(u => u.bad), manual: !!opt.manual });
     }
     return summary;
   } catch (e) {
@@ -4060,19 +4150,33 @@ async function crmIfRebuild() {
   if (!confirm('CRM 상태 파일을 요청 폴더(최근 ' + CRMIF.keepDays + '일)에서 다시 만듭니다. 진행할까요?')) return;
   loading(true, 'CRM 상태를 다시 만드는 중', '요청 폴더를 읽고 있습니다');
   try {
-    const drv = await crmIfDrive(); const today = kstNow(); const found = {};
+    const startMs = Date.now(); const drv = await crmIfDrive(); const nowK = kstNow(); const found = {}; let firstYmd = '', skipped = 0;
     for (let i = CRMIF.keepDays; i >= 0; i--) {
-      const date = crmIfYmd(new Date(today.getTime() - i * 86400000));
-      let ch = null; try { ch = await apiAll('/drives/' + drv.driveId + '/root:/' + CRMIF.root + '/' + CRMIF.out + '/' + date + ':/children?$select=name,id'); } catch (e) { continue; }
-      for (const f of (ch.value || [])) {
-        if (!/\.json$/i.test(f.name)) continue;
-        const j = await crmIfGetJson(drv.driveId, '/items/' + f.id); if (!j || !Array.isArray(j.records) || !!j.test !== _isUat()) continue;
-        j.records.forEach(r => { found[r.bpCode] = { contractNos: r.contractNos || [], event: r.event, uploadedAt: j.createdAt, outboundFile: date + '/' + f.name, result: 'PENDING', appliedAt: null, inboundFile: null, crmContractor: null, message: '', perContract: {}, history: [] }; });
+      const date = crmIfYmd(new Date(nowK.getTime() - i * 86400000));
+      const ls = await crmIfList(drv.driveId, CRMIF.root + '/' + CRMIF.out + '/' + date);
+      if (ls.status === 404) continue;
+      if (!ls.items) { skipped++; continue; }
+      for (const f of ls.items.slice().sort((x, y) => String(x.name).localeCompare(String(y.name)))) {
+        if (!f.file || !/\.json$/i.test(f.name)) continue;
+        const g = await crmIfGetJson(drv.driveId, '/items/' + f.id); const j = g.json;
+        if (!g.json && !g.parseError) { skipped++; continue; }
+        if (!j || !Array.isArray(j.records) || !!j.test !== _isUat()) continue;
+        if (!firstYmd) firstYmd = date;
+        j.records.forEach(r => {
+          if (!r || !r.bpCode) return;
+          const prev = found[r.bpCode]; if (prev && crmIfMs(prev.uploadedAt) > crmIfMs(j.createdAt)) return;   // 같은 BP 는 가장 늦은 요청이 기준
+          found[r.bpCode] = { contractNos: r.contractNos || [], event: r.event, uploadedAt: crmIfKstIso(j.createdAt) || j.createdAt, outboundFile: date + '/' + f.name, result: 'PENDING', appliedAt: null, inboundFile: null, crmContractor: null, message: '', perContract: {}, history: [] };
+        });
       }
     }
-    await crmIfStateSave(s => { Object.keys(s).forEach(k => { if (k.charAt(0) !== '_') delete s[k]; }); Object.assign(s, found); s._processedInbound = []; });
+    if (skipped) throw new Error('요청 폴더 일부를 읽지 못했습니다(' + skipped + '곳) — 잠시 뒤 다시 해 주세요. 상태는 바꾸지 않았습니다.');
+    await crmIfStateSave(s => {
+      Object.keys(s).forEach(k => { if (k.charAt(0) === '_') return; if (crmIfMs(s[k] && s[k].uploadedAt) >= startMs) return; delete s[k]; });   // 재구성 중에 새로 보낸 건은 남긴다
+      Object.keys(found).forEach(k => { if (s[k] && crmIfMs(s[k].uploadedAt) >= startMs) return; s[k] = found[k]; });
+      s._processedInbound = [];
+    });
     bpLogAdmin('CRM 상태 재구성', { count: Object.keys(found).length });
-    await crmIfReconcile({ manual: true });
+    await crmIfReconcile({ manual: true, fromYmd: firstYmd || undefined });
     showAlert('상태를 다시 만들었습니다.', Object.keys(found).length + '건', '✅');
   } catch (e) { showAlert('상태를 다시 만들지 못했습니다.', aoErr(e), '⚠️'); }
   finally { loading(false); }
@@ -4093,7 +4197,7 @@ function crmIfStatusOf(x) {   // {kind, label, up, done, tip, resend}
   const cnt = nos > 1 ? ' ' + okN + '/' + nos : '';
   switch (e.result) {
     case 'UPLOAD_FAILED': return { kind: 'fail', label: '전송 실패', up: '', done: '', tip: tipBase + '\n요청 파일을 쓰지 못했습니다', resend: true, upFail: true };
-    case 'PENDING': { const late = e.uploadedAt && (Date.now() - new Date(e.uploadedAt).getTime()) > CRMIF.delayMin * 60000; return { kind: late ? 'late' : 'wait', label: late ? '지연' : '대기', up, done: '', tip: tipBase + (late ? '\n' + CRMIF.delayMin + '분이 지나도 응답이 없습니다 — CRM 담당자 확인' : ''), resend: late }; }
+    case 'PENDING': { const late = crmIfMs(e.uploadedAt) && (Date.now() - crmIfMs(e.uploadedAt)) > CRMIF.delayMin * 60000; return { kind: late ? 'late' : 'wait', label: late ? '지연' : '대기', up, done: '', tip: tipBase + (late ? '\n' + CRMIF.delayMin + '분이 지나도 응답이 없습니다 — CRM 담당자 확인' : ''), resend: late }; }
     case 'APPLIED': return { kind: 'ok', label: '✓' + cnt, up, done, tip: tipBase };
     case 'ALREADY_SAME': return { kind: 'ok', label: '반영(동일)' + cnt, up, done, tip: tipBase };
     case 'PARTIAL': return { kind: 'part', label: '일부' + cnt, up, done: '', tip: tipBase + '\n일부 계약만 반영됨' + (done ? ' · 마지막 반영 ' + done : ''), resend: true };
