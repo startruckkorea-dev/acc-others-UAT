@@ -3784,7 +3784,7 @@ async function bpBulkAdd() {
    요청 JSON 한 개를 쓴다. CRM 은 10분마다 읽어 계약에 SAP 코드를 기록하고 Inbound_CRM_to_BP-Master/YYYYMMDD/ 에 응답 JSON 을 쓴다.
    이 앱은 관리 탭에서(5분 · 진입 · 버튼) 응답을 읽어 BP 코드별 상태를 STK-DB 문서 루트의 상태 파일에 적고, 목록의 「CRM 업로드 · CRM 반영」 두 열로 보여 준다.
    · 규격 · 규칙: BP-Master_CRM_인터페이스_정의서.xlsx v1.0 (파일 1:1 응답 · 상대 폴더는 읽기만 · 자기 폴더에만 쓰기)
-   · Go-live(설정 키 ACC-OTHERS_CRM_IF = Y) 이후 저장 건만 — 이전 데이터 일괄 이관 없음(이전 건은 수정 저장될 때 UPDATE)
+   · Go-live(설정 키 ACC-OTHERS_CRM_IF = Y + ACC-OTHERS_CRM_IF_GOLIVE 날짜) 이후 저장 건만 — 이전 데이터 일괄 이관 없음(이전 건은 수정 저장될 때 UPDATE)
    · 보내는 값은 이름 · 유형 · 계약번호 · 상태뿐 — 계좌 · 사업자번호 · 메일은 보내지 않는다
    · UAT(IS_UAT)는 Outbound_…/UAT/YYYYMMDD · Inbound_…/UAT/YYYYMMDD 에 따로 쌓고 test: true 로 보낸다(CRM 은 반영 없이 응답만). 상태 파일은 UAT 전용 이름.
    · 보존: 인터페이스 파일은 지우지 않는다(영구 보관 · 10-21 결정). keepDays 는 읽은 응답 목록 · 상태 재구성 범위에만 쓴다. */
@@ -3797,11 +3797,30 @@ const CRMIF = {
 function _isUat() { return typeof IS_UAT !== 'undefined' && !!IS_UAT; }
 const CRMIF_STATE_FILE = _isUat() ? 'acc_others_crm_if_state_uat.json' : 'acc_others_crm_if_state.json';   // STK-DB 문서 루트(잠금 파일 옆)
 function _crmCfg(key) { const c = (typeof _sysConfig !== 'undefined' && _sysConfig) || {}; const v = c[key]; return String((v && (v.name || v.email)) || '').trim(); }
-/* 켜기 · 끄기 — 운영: ACC-OTHERS_CRM_IF 가 Y 일 때만(없으면 꺼짐 = Go-live 전). UAT: 기본 켬(test 로만 보냄), ACC-OTHERS-UAT_CRM_IF 가 N 이면 끔 */
-function crmIfOn() {
+/* 켜기 · 끄기 — 운영: ACC-OTHERS_CRM_IF 가 Y 일 때만(없으면 꺼짐 = Go-live 전). UAT: 기본 켬(test 로만 보냄), ACC-OTHERS-UAT_CRM_IF 가 N 이면 끔
+   Go-live 날짜(10-26) — ACC-OTHERS_CRM_IF_GOLIVE(UAT: ACC-OTHERS-UAT_CRM_IF_GOLIVE) 에 날짜(B열)를 적으면 그 날 00:00(KST)부터 켜진다.
+   그 전에는 Y 여도 보내지 않는다. 이전 데이터는 일괄로 보내지 않고 Go-live 이후 등록 · 수정 · 상태 변경을 저장한 건만 보낸다.
+   날짜를 알아볼 수 없으면 안전하게 꺼 둔다(설정 실수로 이전 데이터가 나가지 않게). */
+function crmIfSwitch() {
   if (_isUat()) return !/^(N|NO|OFF|FALSE|0)$/i.test(_crmCfg('ACC-OTHERS-UAT_CRM_IF'));
   return /^(Y|YES|ON|TRUE|1)$/i.test(_crmCfg('ACC-OTHERS_CRM_IF'));
 }
+function crmIfGoLive() {   // { set, valid, ymd: 'YYYY-MM-DD', ms: KST 00:00 의 UTC ms }
+  const raw = _crmCfg(_isUat() ? 'ACC-OTHERS-UAT_CRM_IF_GOLIVE' : 'ACC-OTHERS_CRM_IF_GOLIVE');
+  if (!raw) return { set: false, valid: true, ymd: '', ms: 0 };
+  let y, m, d;
+  if (/^\d{5}(\.\d+)?$/.test(raw)) { const t = new Date(Math.round((parseFloat(raw) - 25569) * 86400000)); y = t.getUTCFullYear(); m = t.getUTCMonth() + 1; d = t.getUTCDate(); }   // Excel 날짜 셀(일련번호)
+  else { const g = /^(\d{4})[-./]?(\d{1,2})[-./]?(\d{1,2})/.exec(raw); if (g) { y = +g[1]; m = +g[2]; d = +g[3]; } }
+  if (!y || m < 1 || m > 12 || d < 1 || d > 31) return { set: true, valid: false, ymd: raw, ms: 0 };
+  const p = n => String(n).padStart(2, '0');
+  return { set: true, valid: true, ymd: y + '-' + p(m) + '-' + p(d), ms: Date.UTC(y, m - 1, d) - 9 * 3600000 };
+}
+function crmIfOn() {
+  if (!crmIfSwitch()) return false;
+  const g = crmIfGoLive(); if (!g.set) return true;
+  return g.valid && Date.now() >= g.ms;
+}
+function crmIfScheduled() { const g = crmIfGoLive(); return crmIfSwitch() && g.set && (!g.valid || Date.now() < g.ms) ? g : null; }   // 켜기로 했지만 아직 Go-live 전(또는 날짜 오류)
 function crmIfDummy() { const list = _crmCfg('ACC-OTHERS_CRM_IF_IGNORE').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); return [...new Set(CRMIF.dummyDefault.concat(list))]; }
 function crmIfContact() { const c = (typeof _sysConfig !== 'undefined' && _sysConfig) || {}; const v = c['ACC-OTHERS_CRM_IF_CONTACT']; return v && (v.email || v.name) ? { name: v.name || '', email: v.email || '' } : null; }
 /* 계약번호 정규화 — trim → 대문자 → 구분자(. , / 공백 ;)로 나눔 → ^M\d{8}$ 조각만. 임시 번호는 따로 모은다.
@@ -3909,6 +3928,9 @@ async function crmIfSend(items, origin) {
   items.forEach(it => {
     const c = crmIfContracts(it.x.bizNo), pc = it.prev ? crmIfContracts(it.prev.bizNo) : { nos: [] };
     if (c.nos.length > CRMIF_MAX) { console.warn('[CRM] 계약번호 ' + c.nos.length + '개 — 앞 ' + CRMIF_MAX + '개만 보냅니다:', it.x.code); c.nos = c.nos.slice(0, CRMIF_MAX); }
+    // 이미 CRM 에 보낸 BP 를 수정했는데 CRM 이 받는 값(이름 · 유형 · 계약번호 · 상태)이 그대로면 보내지 않는다(10-26 — 계좌 · 은행만 고친 경우 등).
+    // Go-live 전 데이터를 처음 고친 경우(상태 기록 없음)는 수정한 건으로 보고 보낸다.
+    if (it.prev && !it.event && c.nos.length && crmIfEntry(it.x.code) && !(it.changed || []).length) return;
     if (c.nos.length) targets.push({ ...it, nos: c.nos, prevNos: pc.nos.filter(n => !c.nos.includes(n)), event: it.event || (it.prev ? 'UPDATE' : 'CREATE') });
     else if (pc.nos.length) targets.push({ ...it, nos: [], prevNos: pc.nos, event: 'UNLINK' });
     else if (c.dummy.length) dummies.push(it.x.code);
@@ -4105,13 +4127,20 @@ function bpSetCrm(v) {
 }
 function crmIfRenderSummary() {
   const bar = document.getElementById('bp-crm-bar'); if (!bar) return;
+  const sch = crmIfScheduled();
+  if (sch && isBpAdmin()) {   // Go-live 전 — 예정만 알린다(열 · 전송은 꺼진 채)
+    const dd = sch.valid ? Math.ceil((sch.ms - Date.now()) / 86400000) : 0;
+    bar.innerHTML = sch.valid ? '<b>CRM 연동 · Go-live ' + esc(sch.ymd) + ' 예정</b><span class="sub">D-' + dd + ' · 이 날부터 등록 · 수정 · 상태 변경을 저장한 건만 CRM 으로 보냅니다. 이전 데이터는 일괄로 보내지 않습니다.</span>'
+                              : '<b>CRM 연동 · Go-live 날짜 확인 필요</b><span class="sub">설정의 Go-live 날짜(' + esc(sch.ymd) + ')를 읽을 수 없어 전송을 멈춰 두었습니다 — IT 에 문의해 주세요.</span>';
+    bar.classList.add('show'); return;
+  }
   if (!crmIfOn() || !isBpAdmin()) { bar.classList.remove('show'); return; }
   const n = { wait: 0, late: 0, fail: 0, ok: 0 };
   _bp.all.forEach(x => { const s = crmIfStatusOf(x); if (s.kind === 'wait') n.wait++; else if (s.kind === 'late') n.late++; else if (s.kind === 'fail' || s.kind === 'part') n.fail++; else if (s.kind === 'ok') n.ok++; });
   const ct = crmIfContact();
   bar.innerHTML = '<b>CRM 연동' + (_isUat() ? ' · UAT(test 전송)' : '') + '</b>' +
     '<span>대기 <span class="n wait">' + n.wait + '</span></span><span>지연 <span class="n late">' + n.late + '</span></span><span>실패 <span class="n fail">' + n.fail + '</span></span><span>반영 <span class="n ok">' + n.ok + '</span></span>' +
-    '<span class="sub">' + (_crmIfLastRecon ? '마지막 확인 ' + new Date(_crmIfLastRecon + 9 * 3600000).toISOString().slice(11, 16) : '아직 확인 전') + (ct ? ' · CRM 담당 ' + esc(ct.name || ct.email) : '') + '</span>' +
+    '<span class="sub">' + (crmIfGoLive().set ? 'Go-live ' + esc(crmIfGoLive().ymd) + ' 이후 저장분 · ' : '') + (_crmIfLastRecon ? '마지막 확인 ' + new Date(_crmIfLastRecon + 9 * 3600000).toISOString().slice(11, 16) : '아직 확인 전') + (ct ? ' · CRM 담당 ' + esc(ct.name || ct.email) : '') + '</span>' +
     '<span class="sp"><button class="btn btn-g" style="padding:3px 10px;font-size:.72rem" onclick="crmIfRefreshClick()">↻ CRM 상태 갱신</button>' +
     '<button class="btn btn-g" style="padding:3px 10px;font-size:.72rem" onclick="crmIfExport()">CRM 현황 내보내기</button>' +
     '<button class="lnk" style="font-size:.7rem" onclick="crmIfRebuild()">상태 재구성</button></span>';
