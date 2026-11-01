@@ -145,9 +145,25 @@ tbody tr:hover{background:#f8f9fb}
 .list-bar input[type=text]{flex:1;min-width:200px;max-width:420px}
 /* 도구 줄의 칸은 신청서 폼보다 낮게 — 폼과 같은 8px 10px 을 쓰니 목록 위가 두툼했다(09-21).
    신청서 입력 칸에는 영향이 없도록 도구 줄과 관리자 줄에만 건다. */
-.list-bar select,.list-bar input[type=text],#adm-status,#adm-search{
+.list-bar select,.list-bar input[type=text],#adm-status,#adm-kind,#adm-search,#adm-title{
   padding:4px 9px;font-size:.78rem;line-height:1.5}
 .list-count{margin-left:auto;font-size:.8rem;color:#605e5c;white-space:nowrap}
+/* APS 목록 필터 공통(11-01 aps-lf) — 검색칸 폭 · 오른쪽 묶음(건수 · 새로고침 · Excel) · 새로고침 단추(ACC Voucher 모양) · 연도 안내 */
+input.aps-lf-q { width: 170px; }
+input.aps-lf-t { width: 180px; }
+.aps-lf-right { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.aps-lf-ref { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; background: #fff; color: #605e5c; border: 1px solid #d2d0ce; border-radius: 4px; cursor: pointer; white-space: nowrap; font-family: inherit; line-height: 1.2; }
+.aps-lf-ref:hover { background: #f3f2f1; }
+.aps-lf-ref:disabled { opacity: .6; cursor: default; }
+.aps-lf-ref .ico { display: inline-block; font-size: 1.08em; line-height: 1; }
+.aps-lf-ref.busy .ico { animation: apsLfSpin .8s linear infinite; }
+@keyframes apsLfSpin { to { transform: rotate(360deg); } }
+.aps-lf-note { color: #a4262c; white-space: nowrap; }
+@media (max-width: 768px) {
+  .aps-lf-right { margin-left: 0; flex: 1 1 100%; justify-content: flex-end; }
+}
+/* 구분 칸(11-01) — Deviation Category 이름이 길어도 필터 줄이 늘어나지 않게 */
+#my-kind,#adm-kind{max-width:220px;text-overflow:ellipsis}
 /* 요청 제목·적용 기간은 길 수 있어 한 줄로 자르고, 전체 내용은 마우스를 올리면 보인다 */
 .c-rtit,.c-dur,.c-pol{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
 /* 목록 세 표(내 신청 · 결재함 · 관리자) — 10-06: 열 폭을 자동에 맡겨 좁아지면 Title(DEV-2026-10-06_ID-4) · 발생일 · 신청일이 두 줄로 꺾였다.
@@ -816,8 +832,11 @@ html[data-crm-off] .bp-crm-col{display:none !important}
   .list-bar input[type=text] { order: 3; flex: 1 1 100%; min-width: 0; max-width: none; }
   #pane-admin > div:first-child { gap: 8px !important; }
   #pane-admin > div:first-child > div { width: 100%; flex-wrap: wrap; }
-  #pane-admin > div:first-child > div:last-child { justify-content: space-between; }
-  #adm-search { flex: 1 1 0; width: auto !important; min-width: 0; }
+  #pane-admin .aps-lf-right > span[id$="-count"] { margin-right: auto; }
+  #adm-status, #adm-kind { flex: 1 1 calc(50% - 4px); min-width: 0; max-width: none; }
+  #adm-search, #adm-title { flex: 1 1 100%; width: auto !important; min-width: 0; }
+  #my-status, #my-kind { flex: 1 1 calc(50% - 4px); min-width: 0; max-width: none; }
+  #my-count { order: 4; flex: 1 1 100%; margin-left: 0; }
   .tbl-wrap { -webkit-overflow-scrolling: touch; }
   .pg button { min-height: 32px; min-width: 36px; }
 
@@ -892,7 +911,7 @@ html[data-crm-off] .bp-crm-col{display:none !important}
     :where(select:not([multiple]):not([size])) { background-color: #fff; border: 1px solid #d2d0ce; border-radius: 4px; color: #323130; }
     select:not([multiple]):not([size]) { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23605e5c' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 12px 12px; padding-right: 28px; }
     select:not([multiple]):not([size]):disabled { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23a19f9d' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 12px 12px; }
-    #adm-status { padding-right: 28px !important; }
+    #adm-status, #adm-kind { padding-right: 28px !important; }
     select#dev-policy, select#dev-category, select#dev-exptype, select#ccl-duration, .appr-select-row select { height: 38px; }
   }
 }
@@ -1388,10 +1407,11 @@ window.apsYear = (function () {
 
     <!-- ══════════════ 내 신청 목록 ══════════════ -->
     <div id="pane-my" style="display:none">
-      <!-- BP Master 와 같은 구성: 상태 · 통합 검색 · 건수 -->
+      <!-- APS 목록 필터 공통(11-01 aps-lf): 상태 · 구분 · 제목 / 요청 제목 검색 · 건수. 구분 옵션은 종류(Deviation · Card Limit)마다 aoKindFill 이 채운다 -->
       <div class="list-bar">
         <select id="my-status" onchange="renderMyList()" style="width:auto"><option value="">전체 상태</option><option>대기</option><option>승인완료</option><option>반려</option><option>철회</option></select>
-        <input type="text" id="my-search" oninput="renderMyList()" placeholder="Title / 구분 / 금액 검색..." maxlength="60">
+        <select id="my-kind" onchange="renderMyList()" style="width:auto" title="Deviation Category(위반사항) · 증액 구분"><option value="">전체 구분</option></select>
+        <input type="text" id="my-search" class="aps-lf-q" oninput="renderMyList()" placeholder="제목 / 요청 제목 검색..." title="Title · 요청 제목 · 구분 · 금액으로 찾습니다" maxlength="60">
         <span id="my-count" class="list-count"></span>
       </div>
       <div class="tbl-wrap"><table class="lst">
@@ -1564,13 +1584,16 @@ window.apsYear = (function () {
     <div id="pane-admin" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px">
         <div style="display:flex;gap:8px;align-items:center">
-          <select id="adm-status" onchange="loadAdmin()" style="width:auto"><option value="">전체 상태</option><option>대기</option><option>승인완료</option><option>반려</option><option>철회</option></select>
-          <input type="text" id="adm-search" oninput="loadAdmin()" placeholder="신청자 / Title 검색..." style="width:230px" maxlength="60">
+          <select id="adm-status" onchange="aoAdminRender()" style="width:auto"><option value="">전체 상태</option><option>대기</option><option>승인완료</option><option>반려</option><option>철회</option></select>
+          <select id="adm-kind" onchange="aoAdminRender()" style="width:auto" title="Deviation Category(위반사항) · 증액 구분"><option value="">전체 구분</option></select>
+          <input type="text" id="adm-search" class="aps-lf-q" oninput="aoAdminRender()" placeholder="신청자 / 요청 제목 검색..." title="신청자 메일 · 이름 · 요청 제목 · Title 로 찾습니다" maxlength="60">
+          <input type="text" id="adm-title" class="aps-lf-t" oninput="aoAdminRender()" onkeydown="if(event.key==='Enter'){event.preventDefault();aoAdminTitleEnter();}" placeholder="제목 검색 (2026-10-29)" title="제목 규칙(예: DEV-2026-10-29_ID-445 · CCL-2026-10-29_ID-445)으로 찾습니다. 날짜 · 번호만 써도 됩니다. 목록에 없는 건은 전체 제목을 쓰고 Enter — 번호로 바로 찾습니다." autocomplete="off" spellcheck="false" maxlength="60">
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <span class="aps-lf-right">
           <span id="adm-count" style="font-size:.8rem;color:#605e5c"></span>
+          <button type="button" id="adm-refresh" class="aps-lf-ref" onclick="aoAdminRefresh()" title="목록을 다시 불러옵니다. 지금 고른 필터는 그대로 유지됩니다." style="font-size:.82rem"><span class="ico" aria-hidden="true">↻</span>새로고침</button>
           <button onclick="exportExcel()" style="padding:6px 14px;background:#107c10;color:#fff;border:none;border-radius:4px;font-size:.82rem;cursor:pointer;white-space:nowrap">📊 Excel 내보내기</button>
-        </div>
+        </span>
       </div>
       <div id="adm-stuck" style="display:none" class="warn"></div>
       <div class="tbl-wrap"><table class="lst">
@@ -2236,6 +2259,7 @@ function renderMasterSelects() {
   fill('dev-exptype',  MASTER.expense,  'Select (선택)');
   fill('ccl-duration', MASTER.duration, 'Select (선택)');
   if (document.getElementById('ccl-range')) onCclType();   // 마스터 로드 후 증액 구분에 맞춰 다시 구성
+  try { aoKindFill(_currentCat); } catch (e) { console.warn('[목록] 구분 옵션 갱신 생략:', e && e.message); }   // 목록 필터 구분 칸(11-01 aps-lf)
 }
 
 /* ── 직원 목록 (결재자 선택) ───────────────────────────────── */
@@ -4957,6 +4981,161 @@ function resetFormSilent(cat) {
   acoExtra[cat] = []; acoRenderApprLine(cat);   // 추가 결재자도 비운다(10-07)
 }
 
+/* ══ APS 목록 필터 공통 (11-01 aps-lf) ═══════════════════════════════════════════════
+   내 신청 목록 · 관리자 탭의 필터 줄을 APS 시스템끼리 같은 모양 · 같은 규칙으로 맞춘다(13개 시스템이 같은 코드).
+     내 신청 목록: [전체 상태] [전체 유형] [제목 / 요청 제목 검색] (+ 시스템 고유 필터) … 건수
+     관리자     : [전체 상태] [전체 유형] [신청자 / 요청 제목 검색] [제목 검색] (+ 고유 필터) … 건수 · ↻ 새로고침 · 📊 Excel 내보내기
+   제목 규칙은 <접두어>-YYYY-MM-DD_ID-<번호> — 날짜는 KST 신청일, 번호는 그 해 사이트 목록의 항목 번호다.
+     · 입력하는 동안: 불러온 목록에서 제목을 바로 거른다(대소문자 무시 · 일부만 써도 됨: 「2026-10-30」 · 「ID-445」).
+       결재행 제목(…_ID-445-2)을 붙여 넣어도 신청 제목(…_ID-445)으로 찾는다.
+     · 연도: 제목의 연도로 데이터 사이트를 고른다(apsYear.sites). 지금 보는 연도와 다르면 건수 자리에 알리고,
+       Enter 를 누르면 그 연도로 옮긴다. 사이트가 없는 연도는 옮기지 않고 「데이터 없음 · 준비 전」만 알린다.
+     · Enter: 지금 목록에 없고 번호가 있으면 그 해 사이트에서 항목 번호로 한 건을 바로 읽는다(항목 번호는 목록의
+       기본 색인이라 목록 크기와 상관없이 한 번에 찾는다). 화면을 연 뒤에 들어온 신청도 새로고침 없이 찾는다.
+       읽은 항목의 제목이 입력과 맞지 않으면 보여 주지 않는다. 읽은 항목은 그 시스템의 원래 필터를 그대로 거친다. */
+const APS_LF = {
+  parse(q) {
+    q = String(q == null ? '' : q).trim();
+    const low = q.toLowerCase();
+    const y = q.match(/(?:^|\D)(20\d{2})(?=$|[-_.\s])/);
+    const id = q.match(/ID-?(\d+)(?:-\d+)?\s*$/i);
+    return { q, low, norm: low.replace(/(_id-\d+)-\d+$/, '$1'), year: y ? +y[1] : null, id: id ? +id[1] : null };
+  },
+  // 제목이 입력과 맞는가(빈 입력은 모두 통과)
+  title(t, p) {
+    if (!p || !p.low) return true;
+    t = String(t == null ? '' : t).toLowerCase();
+    return t.indexOf(p.low) >= 0 || (p.norm !== p.low && t.indexOf(p.norm) >= 0);
+  },
+  // 여러 값 가운데 하나라도 검색어를 담고 있는가(빈 검색어는 통과) — 검색어는 소문자로 넘긴다
+  has(low, ...vals) {
+    if (!low) return true;
+    return vals.some(v => String(v == null ? '' : v).toLowerCase().indexOf(low) >= 0);
+  },
+  // 제목 검색의 연도 안내 — 지금 보는 연도와 같거나 연도가 없으면 ''
+  note(p) {
+    const Y = window.apsYear;
+    if (!p || !p.year || !Y || typeof Y.get !== 'function' || p.year === Y.get()) return '';
+    if (!Y.sites || !Y.sites[p.year]) return p.year + '년 데이터가 ' + (p.year < Y.home ? '없습니다' : '아직 준비되지 않았습니다');
+    return 'Enter: ' + p.year + '년에서 찾기';
+  },
+  // Enter — o = { found: 지금 목록에 맞는 건이 있나, getById: async 번호 → 항목, onFound: 항목 → 목록에 넣고 다시 그리기 }
+  async enter(p, o) {
+    const Y = window.apsYear;
+    if (!p || !p.low) return 'empty';
+    if (p.year && Y && typeof Y.get === 'function' && p.year !== Y.get()) {
+      if (Y.sites && Y.sites[p.year]) { Y.set(p.year); return 'year'; }
+      return 'nosite';
+    }
+    if (o.found || !p.id || typeof o.getById !== 'function') return 'local';
+    let it = null;
+    try { it = await o.getById(p.id); } catch (e) { it = null; }
+    if (it && it.fields && APS_LF.title(it.fields.Title, p)) { o.onFound(it); return 'found'; }
+    return 'none';
+  },
+  // 새로고침 단추 — 연타를 막고 아이콘을 돌린다. 실패해도 지금 데이터로 다시 그린다. 고른 필터는 그대로 둔다.
+  async refresh(btn, reload, fallback) {
+    if (btn && btn.disabled) return;
+    if (btn) { btn.disabled = true; btn.classList.add('busy'); }
+    try { await reload(); }
+    catch (e) { console.warn('[목록] 새로고침 실패:', e && e.message); try { if (fallback) fallback(); } catch (_) {} }
+    finally { if (btn) { btn.disabled = false; btn.classList.remove('busy'); } }
+  },
+};
+
+/* ── 목록 필터(11-01 aps-lf) — 내 신청 · 관리자 필터 줄의 조건을 한 곳에 둔다 ─────────────────────────
+   · 구분 칸: Deviation Report = Deviation Category(위반사항 — 괄호 앞 이름, kindOf) · Credit Card Limit = 증액 구분(Permanent · Temporary).
+     옵션은 신청서가 쓰는 값(마스터 파일 DeviationCategory · 증액 구분 라디오) — 내 목록과 관리자가 같은 옵션. 종류를 바꾸면 옵션도 바뀐다.
+   · 관리자 목록과 Excel 내보내기는 같은 조건(aoAdminFilterState · aoAdminMatch)을 쓴다 — 화면에 보이는 건 = 내보내는 건.
+   · 필터를 바꾸는 동안에는 다시 조회하지 않는다(예전에는 글자를 칠 때마다 loadAdmin 이 신청 목록 999건 · 결재행을 다시 읽었다).
+     조회는 탭을 열 때 · 결재 처리 뒤(loadAdmin) · 새로고침 단추(aoAdminRefresh)로만. */
+const _aoKindSig = {};
+function aoKindOpts(cat) {
+  if (cat === 'ccl') return ['Permanent', 'Temporary'];   // 신청서 「증액 구분」 라디오 값 그대로
+  if (cat !== 'dev') return [];
+  const out = [];
+  ((MASTER && MASTER.category) || []).forEach(v => { const k = kindOf('dev', { DeviationCategory: v }); if (k && !out.includes(k)) out.push(k); });
+  return out;
+}
+function aoKindFill(cat) {
+  const opts = aoKindOpts(cat), sig = cat + '|' + opts.join('\n');
+  ['my-kind', 'adm-kind'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || _aoKindSig[id] === sig) return;
+    const cur = el.value;
+    el.innerHTML = '<option value="">전체 구분</option>' + opts.map(v => '<option value="' + esc(v) + '">' + esc(v) + '</option>').join('');
+    el.value = opts.includes(cur) ? cur : '';
+    _aoKindSig[id] = sig;
+  });
+}
+function aoMyFilterState() {
+  const v = id => (document.getElementById(id) || { value: '' }).value || '';
+  return { status: v('my-status'), kind: v('my-kind'), q: v('my-search').trim().toLowerCase() };
+}
+// 내 신청 — 제목 / 요청 제목 검색은 예전 검색 범위(Title · 구분 · 금액 · 요청 제목)를 그대로 본다
+function aoMyMatch(cat, it, st) {
+  const f = it.fields || {};
+  if (st.status && (f.Status || '').trim() !== st.status) return false;
+  if (st.kind && kindOf(cat, f) !== st.kind) return false;
+  if (st.q && !APS_LF.has(st.q, f.Title, f.RequestTitle, kindOf(cat, f), String(amountOf(cat, f) || ''))) return false;
+  return true;
+}
+function aoAdminFilterState() {
+  const v = id => (document.getElementById(id) || { value: '' }).value || '';
+  return { status: v('adm-status'), kind: v('adm-kind'), kw: v('adm-search').trim().toLowerCase(), title: APS_LF.parse(v('adm-title')) };
+}
+function aoAdminMatch(cat, i, st) {
+  const f = i.fields || {};
+  if (st.status && (f.Status || '').trim() !== st.status) return false;
+  if (st.kind && kindOf(cat, f) !== st.kind) return false;
+  // 신청자 / 요청 제목 — 예전 범위(신청자 메일 · Title)에 신청자 이름 · 요청 제목을 더한다(Title 로 쳐도 계속 찾는다)
+  if (st.kw && !APS_LF.has(st.kw, f.RequesterEmail, f.RequesterName, f.RequestTitle, f.Title)) return false;
+  if (!APS_LF.title(f.Title, st.title)) return false;
+  return true;
+}
+function aoAdmSort(a, b) { return (new Date(b.fields.RequestDate) - new Date(a.fields.RequestDate)) || (b.id - a.id); }
+// 관리자 목록 읽기 — 캐시(_cache[cat].admAll)에 넣고, 진행 불가 감지용 결재행도 새로 읽도록 비운다
+async function aoAdminFetch(cat) {
+  const data = await apiAll('/sites/' + siteId + '/lists/' + LISTS[cat].req + '/items?' + fx(REQ_LIST_FIELDS[cat]) + '&$top=999');
+  _cache[cat].admAll = (data.value || []).sort(aoAdmSort);
+  _cache[cat].admApr = null;
+}
+// 관리자 목록 그리기 — 캐시로만(필터 칸 · 번호 조회 뒤). 아직 읽기 전이거나 그사이 종류를 바꿨으면 그리지 않는다.
+function aoAdminRender(cat) {
+  cat = cat || _currentCat;
+  const all = _cache[cat] && _cache[cat].admAll;
+  if (!all || cat !== _currentCat) return;
+  aoKindFill(cat);
+  const st = aoAdminFilterState();
+  const items = all.filter(i => aoAdminMatch(cat, i, st));
+  _cache[cat].adm = items;
+  const yn = APS_LF.note(st.title);
+  document.getElementById('adm-count').innerHTML = yn ? '<span class="aps-lf-note">' + esc(yn) + '</span>' : '총 ' + items.length + '건';
+  renderHead('adm', cat, 'adm');
+  renderPaged('adm', items, (it, p, n) => rowHtml(cat, 'adm', it, null, p, n), listCols(cat, 'adm').length);
+  if (isIT()) detectStuck(cat, items);
+}
+// 제목 검색 Enter — 다른 연도면 그 연도로, 지금 목록에 없으면 지금 종류(Deviation · Card Limit)의 신청 목록에서 번호로 한 건을 읽는다
+async function aoAdminTitleEnter() {
+  const cat = _currentCat, L = LISTS[cat];
+  if (!L || !_cache[cat]) return;
+  const st = aoAdminFilterState();
+  const r = await APS_LF.enter(st.title, {
+    found: (_cache[cat].admAll || []).some(i => aoAdminMatch(cat, i, st)),
+    getById: id => api('/sites/' + siteId + '/lists/' + L.req + '/items/' + id + '?' + fx(REQ_LIST_FIELDS[cat])),
+    onFound: it => { const a = _cache[cat].admAll; if (a && !a.some(x => String(x.id) === String(it.id))) { a.push(it); a.sort(aoAdmSort); } },
+  });
+  aoAdminRender(cat);
+  if (r === 'none' && cat === _currentCat) { const c = document.getElementById('adm-count'); if (c) c.innerHTML = '<span class="aps-lf-note">「' + esc(st.title.q) + '」 제목을 찾지 못했습니다</span>'; }
+}
+async function aoAdminRefresh() {
+  if (!isAdmin() && !isIT()) return;
+  const cat = _currentCat;
+  if (!LISTS[cat]) return;
+  await APS_LF.refresh(document.getElementById('adm-refresh'), async () => { await aoAdminFetch(cat); aoAdminRender(cat); }, () => aoAdminRender(cat));
+}
+let _aoStuckSeq = 0;
+
 /* ── 목록 조회 ────────────────────────────────────────────── */
 function amountOf(cat, f) { return cat === 'dev' ? f.Amount : f.IncreaseAmount; }
 function kindOf(cat, f) { return cat === 'dev' ? (f.DeviationCategory || '').split('(')[0].trim() : (f.IncreaseType || ''); }
@@ -4987,15 +5166,9 @@ async function loadMy() {
 function renderMyList() {
   const cat = _currentCat;
   const items = (_cache[cat] && _cache[cat].my) || [];
-  const st = (document.getElementById('my-status') || {}).value || '';
-  const q  = ((document.getElementById('my-search') || {}).value || '').trim().toLowerCase();
-  const rows = items.filter(it => {
-    const f = it.fields;
-    if (st && (f.Status || '').trim() !== st) return false;
-    if (!q) return true;
-    return [f.Title, kindOf(cat, f), String(amountOf(cat, f) || ''), f.RequestTitle]
-      .some(v => String(v || '').toLowerCase().includes(q));
-  });
+  aoKindFill(cat);
+  const st = aoMyFilterState();
+  const rows = items.filter(it => aoMyMatch(cat, it, st));
   const cnt = document.getElementById('my-count');
   if (cnt) cnt.textContent = '총 ' + rows.length + '건' + (rows.length !== items.length ? ' / 전체 ' + items.length + '건' : '');
   renderHead('my', cat, 'my');
@@ -5096,24 +5269,13 @@ function renderBadge() {
 
 async function loadAdmin() {
   if (!isAdmin() && !isIT()) return;   // 권한 없음 — switchTab 에서 이미 팝업으로 안내한다
-  const cat = _currentCat, L = LISTS[cat];
+  const cat = _currentCat;
   const tb = document.getElementById('adm-body');
   tb.innerHTML = '<tr><td colspan="7" class="empty">불러오는 중...</td></tr>';
   try {
-    const data = await apiAll('/sites/' + siteId + '/lists/' + L.req + '/items?' + fx(REQ_LIST_FIELDS[cat]) + '&$top=999');
-    let items = (data.value || []).sort((a, b) =>
-      (new Date(b.fields.RequestDate) - new Date(a.fields.RequestDate)) || (b.id - a.id));
-    const st = document.getElementById('adm-status').value;
-    const kw = document.getElementById('adm-search').value.trim().toLowerCase();
-    if (st) items = items.filter(i => (i.fields.Status || '').trim() === st);
-    if (kw) items = items.filter(i =>
-      (i.fields.RequesterEmail || '').toLowerCase().includes(kw) ||
-      (i.fields.Title || '').toLowerCase().includes(kw));
-    _cache[cat].adm = items;
-    document.getElementById('adm-count').textContent = '총 ' + items.length + '건';
-    renderHead('adm', cat, 'adm');
-    renderPaged('adm', items, (it, p, n) => rowHtml(cat, 'adm', it, null, p, n), listCols(cat, 'adm').length);
-    if (isIT()) detectStuck(cat, items);
+    // 읽기는 탭을 열 때 · 결재 처리 뒤에만. 필터 칸은 aoAdminRender 로 캐시만 다시 그린다(11-01 aps-lf)
+    await aoAdminFetch(cat);
+    aoAdminRender(cat);
   } catch (e) {
     tb.innerHTML = '<tr><td colspan="7" class="empty">불러오기 실패: ' + esc(e.message) + '</td></tr>';
   }
@@ -5123,10 +5285,16 @@ async function loadAdmin() {
 async function detectStuck(cat, items) {
   const box = document.getElementById('adm-stuck');
   box.style.display = 'none';
+  const seq = ++_aoStuckSeq;   // 필터를 빨리 바꿔도 앞선 호출이 늦게 끝나 지금 결과를 덮지 않게(11-01)
   try {
     const pend = items.filter(i => (i.fields.Status || '').trim() === '대기');
     if (!pend.length) return;
-    const apr = await apiAll('/sites/' + siteId + '/lists/' + LISTS[cat].apr + '/items?$expand=fields($select=RequestID,Status)&$top=999');
+    // 결재행 상태는 관리자 목록을 읽을 때 한 번만 받는다(aoAdminFetch 가 비움) — 필터 입력마다 다시 읽지 않는다(11-01)
+    const C = _cache[cat];
+    if (!C.admApr) C.admApr = apiAll('/sites/' + siteId + '/lists/' + LISTS[cat].apr + '/items?$expand=fields($select=RequestID,Status)&$top=999');
+    let apr;
+    try { apr = await C.admApr; } catch (e) { C.admApr = null; throw e; }
+    if (seq !== _aoStuckSeq) return;
     const byReq = {};
     (apr.value || []).forEach(a => {
       const k = String(a.fields.RequestID);
@@ -5220,7 +5388,7 @@ function renderPaged(key, items, rowFn, cols) {
   const nCols = cols || 7;
   if (!items.length) {
     // 빈 문구는 APS 공통(10-07): 내 신청 목록 「신청 내역이 없습니다.」 · 결재함 「결재 대기 항목이 없습니다.」 · 관리자(조건 있을 때 포함) 「조회 결과가 없습니다.」
-    const _flt = key === 'my' && (((document.getElementById('my-status') || {}).value || '') || ((document.getElementById('my-search') || {}).value || '').trim());
+    const _flt = key === 'my' && (((document.getElementById('my-status') || {}).value || '') || ((document.getElementById('my-kind') || {}).value || '') || ((document.getElementById('my-search') || {}).value || '').trim());
     const _msg = key === 'apr' ? '결재 대기 항목이 없습니다.' : (key === 'my' && !_flt) ? '신청 내역이 없습니다.' : '조회 결과가 없습니다.';
     tb.innerHTML = '<tr><td colspan="' + nCols + '" class="empty">' + _msg + '</td></tr>';
     pgEl.innerHTML = ''; return;
@@ -5942,8 +6110,9 @@ async function exportExcel() {
       : ['번호', 'Title', '신청자', 'Card Holder', '신청일자', 'Increase Type', 'Reason',
          'Increase Amount(KRW)', 'Duration', 'Remarks', '상태', '신청일', '결재 이력'];
     const rows = [head];
+    const _st = aoAdminFilterState();   // 관리자 목록과 같은 조건 — 화면에 보이는 건 = 내보내는 건(11-01 aps-lf)
     let _xlNo = 0;   // 번호 = 신청 순서(ID 오름차순 정렬 뒤 1부터) — 가장 오래된 건이 1 (09-10)
-    (data.value || []).sort((a, b) => a.id - b.id).forEach(it => {
+    (data.value || []).filter(it => aoAdminMatch(cat, it, _st)).sort((a, b) => a.id - b.id).forEach(it => {
       const f = it.fields;
       const hist = (byReq[String(it.id)] || [])
         .sort((a, b) => (a.ApprovalOrder || 0) - (b.ApprovalOrder || 0))
@@ -5977,7 +6146,7 @@ async function exportExcel() {
     const n = kstNow(); const p = x => String(x).padStart(2, '0');
     XLSX.writeFile(wb, L.prefix + '_Export_' + n.getUTCFullYear() + p(n.getUTCMonth() + 1) + p(n.getUTCDate()) +
       '_' + p(n.getUTCHours()) + p(n.getUTCMinutes()) + '.xlsx');
-    logAction(L.prefix, 'Excel 내보내기', { 건수: rows.length - 1 });
+    logAction(L.prefix, 'Excel 내보내기', { 건수: rows.length - 1, 필터: { 상태: _st.status || '전체', 구분: _st.kind || '전체', 검색어: _st.kw || '', 제목: _st.title.q || '' } });
   } catch (e) {
     try { logAction(L.prefix, 'Excel 내보내기 실패', { 오류: aoErr(e) }); } catch (_le) {}   // 10-15
     alert('Excel 생성 실패: ' + e.message);
